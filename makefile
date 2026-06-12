@@ -39,8 +39,8 @@ endif
 	$(MAKE) -C host/openmaptiles import-osm area=$(area)
 	$(MAKE) -C host/openmaptiles import-wikidata area=$(area)
 	$(MAKE) -C host/openmaptiles import-sql area=$(area)
-	$(MAKE) -C host/openmaptiles generate-bbox-file area=$(area)
-	$(MAKE) -C host/openmaptiles generate-tiles-pg area=$(area)
+	$(MAKE) -C host/openmaptiles generate-bbox-file
+	$(MAKE) -C host/openmaptiles generate-tiles-pg
 	$(MAKE) -C host/openmaptiles stop-db
 	cp -f ./host/openmaptiles/data/tiles.mbtiles ./client/martin/area.mbtiles
 
@@ -49,15 +49,18 @@ pbf-to-mbtiles:
 ifndef area
 	$(error area is required, usage: make pbf-to-mbtiles area=china)
 endif
+	$(MAKE) -C host/openmaptiles clean
+	$(MAKE) -C host/openmaptiles
 	$(MAKE) -C host/openmaptiles start-db
 	$(MAKE) -C host/openmaptiles import-osm area=$(area)
 ifeq ($(download),true)
 	$(MAKE) -C host/openmaptiles import-wikidata area=$(area)
 endif
 	$(MAKE) -C host/openmaptiles import-sql area=$(area)
-	$(MAKE) -C host/openmaptiles generate-bbox-file area=$(area)
-	$(MAKE) -C host/openmaptiles generate-tiles-pg area=$(area)
+	$(MAKE) -C host/openmaptiles generate-bbox-file
+	$(MAKE) -C host/openmaptiles generate-tiles-pg
 	$(MAKE) -C host/openmaptiles stop-db
+	cp -f ./host/openmaptiles/data/tiles.mbtiles ./client/martin/area.mbtiles
 
 .PHONY: publish-mbtiles
 publish-mbtiles:
