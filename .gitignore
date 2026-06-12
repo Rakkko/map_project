@@ -1,0 +1,31 @@
+.DS_Store
+client/docker_image
+
+client/geoserver
+client/postgres
+
+host
+
+*.mbtiles
+
+# Mapnik XML
+host/data.xml
+*.thumb.png
+*.swp
+*.pbf
+
+# quickstart
+host/quickstart.log
+
+# imput / output data
+host/data/*
+
+# generated source files
+host/build/*
+
+# Import cache
+host/cache/*
+
+# any IDE files
+.idea/
+.vscode/

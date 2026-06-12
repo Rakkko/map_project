@@ -1,0 +1,22 @@
+listen_addresses: "0.0.0.0:3000"
+
+postgres:
+  connection_string: postgres://openmaptiles:openmaptiles@host.docker.internal:5432/openmaptiles
+
+  auto_publish: false
+
+  functions:
+    # boundary:
+    #   schema: public
+    #   function: boundary_zxy
+    #   minzoom: 0
+    #   maxzoom: 13
+
+    water:
+      schema: public
+      function: water_zxy
+      minzoom: 0
+      maxzoom: 5
+
+# postgres:
+#     connection_string: postgres://postgres:postgres@postgis:5432/gis

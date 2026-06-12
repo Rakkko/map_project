@@ -1,0 +1,46 @@
+services:
+  # postgis:
+  #   image: postgis/postgis:16-3.4
+  #   container_name: postgis
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_DB: gis
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   volumes:
+  #     - ./postgres/data:/var/lib/postgresql/data
+  #     - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+  #   ports:
+  #     - "5432:5432"
+
+  martin:
+    image: ghcr.io/maplibre/martin:latest
+    container_name: martin
+    # depends_on:
+    #   - postgis
+    volumes:
+      - ./martin/config.yaml:/config.yaml
+      - ./martin/area.mbtiles:/data/area.mbtiles
+    command: ["--config", "/config.yaml"]
+    ports:
+      - "3000:3000"
+
+  # geoserver:
+  #   image: kartoza/geoserver:2.28.3
+  #   container_name: geoserver
+  #   environment:
+  #     GEOSERVER_ADMIN_USER: admin
+  #     GEOSERVER_ADMIN_PASSWORD: geoserver
+  #   volumes:
+  #     - ./geoserver/data_dir:/opt/geoserver/data_dir
+  #   ports:
+  #     - "8080:8080"
+
+  frontend:
+    image: nginx:alpine
+    container_name: frontend
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "8088:80"
