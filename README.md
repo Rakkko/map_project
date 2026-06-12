@@ -15,7 +15,7 @@
 
 # 1. 地图数据准备（联网环境）
 
-> 说明：首次执行时需要联网下载依赖环境、OSM 数据及 Wikidata 数据。完成数据准备后，可在相同地区范围内进行离线处理（地区范围外仍需重新下载 Wikidata 数据）。生成 MBTiles 文件后可导入终端设备进行离线发布。
+> 说明：首次执行时需要联网下载依赖环境、OSM 数据及 Wikidata 数据。完成数据准备后，可在相同地区范围内进行离线处理（地区范围外仍需重新下载 OSM 与  Wikidata 数据）。生成 MBTiles 文件后可导入终端设备进行离线发布。
 
 ## 1.1 项目目录结构
 
@@ -86,9 +86,9 @@ make pbf-to-mbtiles area=<AREA> download=<true|false>
 
 ---
 
-# 2. 区域数据扩展与合并（离线）
+# 2. 区域数据扩展与合并（可离线）
 
-当需要在现有地图数据基础上增加新的行政区、城市或自定义区域时，可通过 Osmium 对数据进行裁剪和合并（未包括在项目内）。
+当需要在现有地图数据基础上增加新的行政区、城市或自定义区域时，可通过 Osmium 对数据进行裁剪和合并（相关可执行文件未包括在项目内）。
 
 ## 2.1 目录结构
 
@@ -103,8 +103,8 @@ make pbf-to-mbtiles area=<AREA> download=<true|false>
 
 | 文件 | 说明 |
 |--------|--------|
-| full_area.osm.pbf | 包含目标区域的完整数据源 |
-| orig_area.osm.pbf | 当前正在使用的数据集 |
+| full_area.osm.pbf | 包含目标区域的完整数据 |
+| orig_area.osm.pbf | 当前正在使用的数据 |
 | config.json | 区域提取配置文件 |
 
 ## 2.2 提取新增区域
@@ -137,7 +137,7 @@ osmium merge \
 output.osm.pbf
 ```
 
-该文件即为合并后的完整地图数据集。
+该文件即为合并后的完整地图数据。
 
 ## 2.4 区域提取配置说明
 
@@ -173,7 +173,7 @@ output.osm.pbf
 
 ## 2.5 重新生成 MBTiles
 
-完成数据扩展或合并后，需重新生成 MBTiles。
+完成数据扩展或合并后，需重新生成 MBTiles。同，若已有新区域全部 Wikidata 数据，可将 download 设置为 `false` 以离线运行。
 
 ```bash
 make pbf-to-mbtiles area=<AREA> download=<true|false>
@@ -182,9 +182,7 @@ make pbf-to-mbtiles area=<AREA> download=<true|false>
 建议流程：
 
 ```text
-数据提取
-    ↓
-数据合并
+数据提取 / 数据合并
     ↓
 生成 output.osm.pbf
     ↓
@@ -291,7 +289,7 @@ frontend/styles/style.json
 
 ## 3.5 启动服务
 
-将 MBTiles 文件重命名并放置到：
+将 MBTiles 文件重命名并放置到（若使用 `make` 命令完成生成可跳过）：
 
 ```text
 client/martin/area.mbtiles
@@ -302,11 +300,8 @@ client/martin/area.mbtiles
 ```bash
 # 启动地图服务
 make publish-mbtiles
-```
 
-停止服务：
-
-```bash
+# 停止服务：
 make stop
 ```
 
@@ -328,4 +323,4 @@ http://localhost:8088
 | Sprite 资源 | 图标资源正常加载 |
 | 浏览器控制台 | 无跨域或资源加载错误 |
 
-当以上检查项全部通过后，即可认为地图服务发布成功。
+当以上检查项全部通过后，即可确认地图服务发布成功。

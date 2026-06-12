@@ -1,11 +1,16 @@
 define HELP_MESSAGE
 ==============================================================================
 Hints fo user:
-  make
-  make download-data area=china
-  make pbf-to-mbtiles area=china [download=true / false]
-  make publish-mbtiles
-  make stop
+  make								# Pull docker images, prepare openmaptiles environment and fonts for Martin
+
+  make download-data area=<AREA>	# Download and import data for the specified area, then generate mbtiles file for Martin
+
+  make pbf-to-mbtiles area=<AREA> [download=true / false]
+  									# Generate mbtiles file for Martin from existing pbf data, if download=true, it will also download and import wikidata
+						
+  make publish-mbtiles				# Publish the generated mbtiles file by starting the Martin server and nginx server
+  
+  make stop							# Stop the Martin server and nginx server
 ==============================================================================
 endef
 export HELP_MESSAGE
@@ -19,8 +24,9 @@ all:
 	docker save nginx:alpine -o ./client/docker_image/nginx.tar
 	mkdir -p host
 	cd ./host && git clone https://github.com/openmaptiles/openmaptiles.git
+	sed -i 's/^MAX_ZOOM=.*/MAX_ZOOM=14/' ./host/openmaptiles/.env
 	cd ./host/openmaptiles && make download-fonts
-	mv ./host/openmaptiles/data/fonts ./client/frontend/glyphs
+	cp -r -f ./host/openmaptiles/data/fonts ./client/frontend/glyphs
 
 .PHONY: help
 help:
@@ -39,8 +45,8 @@ endif
 	$(MAKE) -C host/openmaptiles import-osm area=$(area)
 	$(MAKE) -C host/openmaptiles import-wikidata area=$(area)
 	$(MAKE) -C host/openmaptiles import-sql area=$(area)
-	$(MAKE) -C host/openmaptiles generate-bbox-file
-	$(MAKE) -C host/openmaptiles generate-tiles-pg
+	$(MAKE) -C host/openmaptiles generate-bbox-file area=$(area)
+	$(MAKE) -C host/openmaptiles generate-tiles-pg area=$(area)
 	$(MAKE) -C host/openmaptiles stop-db
 	cp -f ./host/openmaptiles/data/tiles.mbtiles ./client/martin/area.mbtiles
 
@@ -57,8 +63,8 @@ ifeq ($(download),true)
 	$(MAKE) -C host/openmaptiles import-wikidata area=$(area)
 endif
 	$(MAKE) -C host/openmaptiles import-sql area=$(area)
-	$(MAKE) -C host/openmaptiles generate-bbox-file
-	$(MAKE) -C host/openmaptiles generate-tiles-pg
+	$(MAKE) -C host/openmaptiles generate-bbox-file area=$(area)
+	$(MAKE) -C host/openmaptiles generate-tiles-pg area=$(area)
 	$(MAKE) -C host/openmaptiles stop-db
 	cp -f ./host/openmaptiles/data/tiles.mbtiles ./client/martin/area.mbtiles
 
