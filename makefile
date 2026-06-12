@@ -14,13 +14,13 @@ export HELP_MESSAGE
 all:
 	docker pull ghcr.io/maplibre/martin:latest
 	docker pull nginx:alpine
-	docker save ghcr.io/maplibre/martin:latest ./client/docker_image/martin.tar
-	docker save nginx:alpine ./client/docker_image/nginx.tar
-	cd ./host
-	git clone https://github.com/openmaptiles/openmaptiles.git
-	cd ./openmaptiles
-	make download-fonts
-	mv ./data/fonts ../../client/frontend/glyphs
+	mkdir -p client/docker_image
+	docker save ghcr.io/maplibre/martin:latest -o ./client/docker_image/martin.tar
+	docker save nginx:alpine -o ./client/docker_image/nginx.tar
+	mkdir -p host
+	cd ./host && git clone https://github.com/openmaptiles/openmaptiles.git
+	cd ./host/openmaptiles && make download-fonts
+	mv ./host/openmaptiles/data/fonts ./client/frontend/glyphs
 
 .PHONY: help
 help:
@@ -31,41 +31,42 @@ download-data:
 ifndef area
 	$(error area is required, usage: make download-data area=china)
 endif
-	cd ./host/openmaptiles
-	make clean
-	make
-	make start-db
-	make import-data
-	make download area=$(area)
-	make import-osm area=$(area)
-	make import-wikidata area=$(area)
-	make import-sql area=$(area)
-	make generate-bbox-file area=$(area)
-	make generate-tiles-pg area=$(area)
-	make stop-db
+	$(MAKE) -C host/openmaptiles clean
+	$(MAKE) -C host/openmaptiles
+	$(MAKE) -C host/openmaptiles start-db
+	$(MAKE) -C host/openmaptiles import-data
+	$(MAKE) -C host/openmaptiles download area=$(area)
+	$(MAKE) -C host/openmaptiles import-osm area=$(area)
+	$(MAKE) -C host/openmaptiles import-wikidata area=$(area)
+	$(MAKE) -C host/openmaptiles import-sql area=$(area)
+	$(MAKE) -C host/openmaptiles generate-bbox-file area=$(area)
+	$(MAKE) -C host/openmaptiles generate-tiles-pg area=$(area)
+	$(MAKE) -C host/openmaptiles stop-db
+	cp -f ./host/openmaptiles/data/tiles.mbtiles ./client/martin/area.mbtiles
 
 .PHONY: pbf-to-mbtiles
 pbf-to-mbtiles:
 ifndef area
 	$(error area is required, usage: make pbf-to-mbtiles area=china)
 endif
-	make import-osm area=$(area)
+	$(MAKE) -C host/openmaptiles start-db
+	$(MAKE) -C host/openmaptiles import-osm area=$(area)
 ifeq ($(download),true)
-	make import-wikidata area=$(area)
+	$(MAKE) -C host/openmaptiles import-wikidata area=$(area)
 endif
-	make import-sql area=$(area)
-	make generate-bbox-file area=$(area)
-	make generate-tiles-pg area=$(area)
-	make stop-db
+	$(MAKE) -C host/openmaptiles import-sql area=$(area)
+	$(MAKE) -C host/openmaptiles generate-bbox-file area=$(area)
+	$(MAKE) -C host/openmaptiles generate-tiles-pg area=$(area)
+	$(MAKE) -C host/openmaptiles stop-db
 
 .PHONY: publish-mbtiles
 publish-mbtiles:
-	docker compose down
+	cd ./client && docker compose down
 	docker load -i ./client/docker_image/martin.tar
 	docker load -i ./client/docker_image/nginx.tar
-	cp ./frontend/styles/style-martin_publish-mbtiles.json ./frontend/styles/style-martin.json
-	cp ./martin/config_publish-mbtiles.yaml ./martin/config.yaml
-	docker compose up -d
+	cp ./client/frontend/styles/style-martin_mbtiles.json ./client/frontend/styles/style-martin.json
+	cp ./client/martin/config_mbtiles.yaml ./client/martin/config.yaml
+	cd ./client && docker compose up -d
 
 .PHONY: stop
 stop:
