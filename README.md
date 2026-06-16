@@ -1,96 +1,340 @@
-# 地图数据准备与发布实施指南
+# OpenMapTiles + Martin 离线地图数据构建与发布指南
 
-## 文档概述
+## 文档说明
 
-本文档说明基于 OpenStreetMap（OSM）、OpenMapTiles、Martin 和 MapLibre 的地图数据准备、处理与离线发布流程。
+本文档描述基于 OpenStreetMap（OSM）、OpenMapTiles、Martin 和 MapLibre 的离线地图数据构建、MBTiles 生成与发布流程。
 
-适用场景：
+适用于以下场景：
 
-- 构建国家、省、市等区域地图数据
+- 国家、省、市级地图数据构建
 - 离线地图服务部署
-- 地图数据增量扩展与区域合并
-- MBTiles 矢量瓦片发布
+- 地图数据扩展与区域合并
+- MBTiles 矢量瓦片生成与发布
+- 内网或无网络环境地图服务部署
 
 ---
 
-# 1. 地图数据准备（联网环境）
+# 1. 系统架构
 
-> 说明：首次执行时需要联网下载依赖环境、OSM 数据及 Wikidata 数据。完成数据准备后，可在相同地区范围内进行离线处理（地区范围外仍需重新下载 OSM 与  Wikidata 数据）。生成 MBTiles 文件后可导入终端设备进行离线发布。
+本项目采用 OpenMapTiles 数据处理链路生成矢量瓦片，并通过 Martin 提供瓦片服务，最终由 MapLibre 完成地图渲染。
 
-## 1.1 项目目录结构
+架构如下：
 
 ```text
-/
-├── client
-├── host
-└── makefile
+OpenStreetMap (PBF)
+        │
+        ▼
+ OpenMapTiles
+        │
+        ▼
+   MBTiles
+        │
+        ▼
+    Martin
+        │
+        ▼
+     Nginx
+        │
+        ▼
+   MapLibre GL
 ```
 
-## 1.2 环境初始化
+组件说明：
 
-在项目根目录执行：
+| 组件 | 功能 |
+|--------|--------|
+| OpenStreetMap | 原始地图数据 |
+| OpenMapTiles | 地图数据处理与矢量瓦片生成 |
+| MBTiles | 矢量瓦片存储格式 |
+| Martin | 矢量瓦片服务 |
+| Nginx | 前端静态资源服务 |
+| MapLibre GL JS | 地图渲染引擎 |
+
+---
+
+
+# 2. 项目结构
+
+初始化后目录结构如下：
+
+```text
+.
+├── client
+│   ├── docker-compose.yaml
+│   ├── docker_image
+│   ├── frontend
+│   ├── martin
+│   └── nginx
+│
+├── host
+│   └── openmaptiles
+│
+└── Makefile
+```
+
+目录说明：
+
+| 目录 | 说明 |
+|--------|--------|
+| client | 地图服务发布环境 |
+| host | OpenMapTiles 数据处理环境 |
+| client/martin | MBTiles 与 Martin 配置 |
+| client/frontend | MapLibre 前端资源 |
+| host/openmaptiles | OpenMapTiles 工作目录 |
+
+---
+
+# 3. 环境初始化（联网环境）
+
+首次使用时需要联网下载：
+
+- Docker 镜像
+- OpenMapTiles 源码
+- 字体资源（Glyphs）
+
+执行：
 
 ```bash
-# 下载并初始化运行环境
-make
+make all
 ```
 
-## 1.3 下载并构建指定区域地图
+执行内容：
 
-用于从网络下载指定区域的 OSM 与 Wikidata 数据，并生成对应的 MBTiles 文件。
+1. 下载 Martin 镜像
+2. 下载 Nginx 镜像
+3. 保存镜像到本地归档文件
+4. 克隆 OpenMapTiles 仓库
+5. 下载字体资源
+6. 同步字体到前端目录
 
-执行命令：
+执行完成后即可进行地图数据处理。
+
+---
+
+# 4. 最大缩放级别（Max Zoom Level）配置
+
+## 4.1 功能说明
+
+OpenMapTiles 默认生成的最大缩放级别通常为：
+
+```text
+14
+```
+
+提高 Zoom Level 会显著增加：
+
+- MBTiles 文件大小
+- 数据生成时间
+- 磁盘占用
+- 内存消耗
+
+---
+
+## 4.2 配置 Zoom Level
+
+执行：
+
+```bash
+make set-max-zoom zoom_level=<ZOOM_LEVEL>
+```
+
+示例：
+
+```bash
+make set-max-zoom zoom_level=20
+```
+
+该命令会同步修改：
+
+```text
+host/openmaptiles/.env
+```
+
+以及：
+
+```text
+host/openmaptiles/openmaptiles.yaml
+```
+
+中的最大缩放级别配置。
+
+---
+
+## 4.3 构建时指定 Zoom Level
+
+也可以在数据构建过程中直接指定：
+
+```bash
+make download-data area=asia/china zoom_level=20
+```
+
+或：
+
+```bash
+make pbf-to-mbtiles area=china zoom_level=20
+```
+
+Makefile 将自动更新配置后再执行数据生成流程。
+
+---
+
+# 5. 在线下载并构建地图数据
+
+适用于首次构建指定区域地图。
+
+---
+
+## 5.1 下载并生成 MBTiles
+
+执行：
 
 ```bash
 make download-data area=<AREA>
 ```
 
-参数说明：
-
-| 参数 | 说明 |
-|--------|--------|
-| AREA | 地图区域路径，例如 `asia/china/sichuan` |
-
-执行流程：
-
-1. 初始化数据库。
-2. 下载指定区域 OSM 数据。
-3. 下载相关 Wikidata 数据。
-4. 生成矢量瓦片数据。
-5. 输出 MBTiles 文件。
-
-输出结果：
-
-```text
-data/tiles.mbtiles
-```
-
-该文件包含完整的矢量瓦片数据，可直接用于后续地图服务发布。
-
-## 1.4 使用本地 PBF 数据生成 MBTiles
-
-当已有 `.osm.pbf` 文件时，可跳过 OSM 数据下载步骤。
-
-将 PBF 文件放置到 OpenMapTiles 指定目录后执行：
+示例：
 
 ```bash
-make pbf-to-mbtiles area=<AREA> download=<true|false>
+make download-data area=china
 ```
 
-参数说明：
-
-| 参数 | 说明 |
-|--------|--------|
-| AREA | PBF 文件名称（不含扩展名） |
-| download | 是否下载 Wikidata 数据。若数据已存在，可设置为 `false` 实现离线运行（默认值为 `false` ） |
+```bash
+make download-data area=asia/china/sichuan
+```
 
 ---
 
-# 2. 区域数据扩展与合并（可离线）
+## 5.2 参数说明
 
-当需要在现有地图数据基础上增加新的行政区、城市或自定义区域时，可通过 Osmium 对数据进行裁剪和合并（相关可执行文件未包括在项目内）。
+| 参数 | 说明 |
+|--------|--------|
+| area | OpenMapTiles 支持的区域路径 |
+| zoom_level | 可选，最大缩放级别 |
 
-## 2.1 目录结构
+示例：
+
+```bash
+make download-data \
+    area=asia/china \
+    zoom_level=12
+```
+
+---
+
+## 5.3 执行流程
+
+系统将自动执行：
+
+```text
+下载区域 PBF
+      ↓
+导入 OSM 数据
+      ↓
+导入 Wikidata
+      ↓
+生成 SQL 数据
+      ↓
+生成 Bounding Box
+      ↓
+生成矢量瓦片
+      ↓
+输出 MBTiles
+```
+
+---
+
+## 5.4 输出结果
+
+生成文件：
+
+```text
+client/martin/area.mbtiles
+```
+
+该文件可直接用于 Martin 发布。
+
+---
+
+# 6. 使用已有 PBF 文件生成 MBTiles
+
+当已经拥有 OSM PBF 文件时，可跳过下载流程。
+
+---
+
+## 6.1 准备数据
+
+将 PBF 文件放置到 OpenMapTiles 数据目录。
+
+例如：
+
+```text
+host/openmaptiles/data/china.osm.pbf
+```
+
+---
+
+## 6.2 执行构建
+
+```bash
+make pbf-to-mbtiles area=<AREA>
+```
+
+示例：
+
+```bash
+make pbf-to-mbtiles area=china
+```
+
+---
+
+## 6.3 Wikidata 下载控制
+
+如果需要重新下载 Wikidata：
+
+```bash
+make pbf-to-mbtiles \
+    area=china \
+    download=true
+```
+
+如果已有 Wikidata 数据：
+
+```bash
+make pbf-to-mbtiles \
+    area=china \
+    download=false
+```
+
+---
+
+## 6.4 参数说明
+
+| 参数 | 说明 |
+|--------|--------|
+| area | PBF 数据名称（不含扩展名） |
+| download | 是否下载 Wikidata |
+| zoom_level | 最大缩放级别 |
+
+示例：
+
+```bash
+make pbf-to-mbtiles \
+    area=china \
+    zoom_level=12 \
+    download=false
+```
+
+---
+
+# 7. 区域扩展与数据合并
+
+当需要增加新的行政区域时，可利用 Osmium 对现有数据进行裁剪与合并。
+
+> Osmium 工具不包含在本项目中，需要单独安装。
+
+---
+
+## 7.1 目录结构
 
 ```text
 .
@@ -99,17 +343,9 @@ make pbf-to-mbtiles area=<AREA> download=<true|false>
 └── config.json
 ```
 
-文件说明：
+---
 
-| 文件 | 说明 |
-|--------|--------|
-| full_area.osm.pbf | 包含目标区域的完整数据 |
-| orig_area.osm.pbf | 当前正在使用的数据 |
-| config.json | 区域提取配置文件 |
-
-## 2.2 提取新增区域
-
-根据配置文件从完整数据源中提取目标区域。
+## 7.2 提取新增区域
 
 ```bash
 osmium extract \
@@ -117,11 +353,9 @@ osmium extract \
     full_area.osm.pbf
 ```
 
-执行完成后将生成配置文件中定义的区域数据文件。
+---
 
-## 2.3 合并区域数据
-
-将新增区域与现有地图数据进行合并。
+## 7.3 合并区域数据
 
 ```bash
 osmium merge \
@@ -131,23 +365,15 @@ osmium merge \
     -o output.osm.pbf
 ```
 
-输出文件：
+输出：
 
 ```text
 output.osm.pbf
 ```
 
-该文件即为合并后的完整地图数据。
+---
 
-## 2.4 区域提取配置说明
-
-支持以下提取方式：
-
-- Bounding Box（矩形范围）
-- Polygon（单个多边形）
-- Multipolygon（多个多边形）
-
-示例配置：
+## 7.4 提取配置示例
 
 ```json
 {
@@ -171,141 +397,105 @@ output.osm.pbf
 }
 ```
 
-## 2.5 重新生成 MBTiles
+支持：
 
-完成数据扩展或合并后，需重新生成 MBTiles。同，若已有新区域全部 Wikidata 数据，可将 download 设置为 `false` 以离线运行。
+- Bounding Box
+- Polygon
+- Multipolygon
+
+---
+
+## 7.5 重新生成 MBTiles
+
+数据合并完成后重新生成瓦片：
 
 ```bash
-make pbf-to-mbtiles area=<AREA> download=<true|false>
+make pbf-to-mbtiles area=<AREA>
 ```
 
-建议流程：
+如果 Wikidata 已存在：
+
+```bash
+make pbf-to-mbtiles \
+    area=<AREA> \
+    download=false
+```
+
+推荐流程：
 
 ```text
-数据提取 / 数据合并
+区域提取
     ↓
-生成 output.osm.pbf
+区域合并
+    ↓
+生成新的 PBF
     ↓
 重新生成 MBTiles
 ```
 
 ---
 
-# 3. MBTiles 服务发布（离线）
+# 8. 发布 MBTiles 服务（离线）
 
-> 说明：将 MBTiles 文件导入目标终端后，本章节所有操作均可在离线环境执行。
+生成 MBTiles 后即可在离线环境部署。
 
-## 3.1 系统架构
+---
 
-发布方案采用以下组件：
+## 8.1 发布目录
 
-| 组件 | 功能 |
-|--------|--------|
-| Martin | 提供矢量瓦片服务接口 |
-| Nginx | 提供静态资源服务 |
-| MapLibre GL JS | 地图渲染引擎 |
-| MBTiles | 矢量瓦片数据存储 |
-
-系统架构：
-
-```text
-Browser
-   │
-   ▼
-Nginx (Frontend)
-   │
-   ▼
-Martin
-   │
-   ▼
-area.mbtiles
-```
-
-## 3.2 项目目录结构
-
-```text
-client
-├── docker-compose.yaml
-├── nginx
-│   └── nginx.conf
-├── frontend
-│   ├── index.html
-│   ├── maplibre-gl.js
-│   ├── maplibre-gl.css
-│   ├── styles
-│   │   └── style.json
-│   ├── glyphs
-│   └── sprites
-└── martin
-    ├── config.yaml
-    └── area.mbtiles
-```
-
-## 3.3 Martin 服务验证
-
-服务启动后访问：
-
-```text
-http://localhost:3000/catalog
-```
-
-验证项：
-
-- 服务正常响应
-- 已加载 MBTiles 数据
-- 数据集名称显示正确
-
-## 3.4 MapLibre 样式配置
-
-配置文件：
-
-```text
-frontend/styles/style.json
-```
-
-建议基于 OpenMapTiles 官方样式（例如 `dark-matter`）进行本地化修改。
-
-关键配置示例：
-
-```json
-{
-  "sources": {
-    "martin": {
-      "type": "vector",
-      "url": "http://localhost:3000/area"
-    }
-  },
-  "sprite": "http://localhost:8088/sprites/sprite",
-  "glyphs": "http://localhost:8088/glyphs/{fontstack}/{range}.pbf"
-}
-```
-
-配置要求：
-
-- `sources` 指向 Martin 服务。
-- `sprite` 使用本地 Sprite 资源。
-- `glyphs` 使用本地字体资源。
-- 离线部署时避免引用外部资源。
-
-## 3.5 启动服务
-
-将 MBTiles 文件重命名并放置到（若使用 `make` 命令完成生成可跳过）：
+MBTiles 文件位置：
 
 ```text
 client/martin/area.mbtiles
 ```
 
-在项目根目录执行：
+---
+
+## 8.2 启动服务
+
+执行：
 
 ```bash
-# 启动地图服务
 make publish-mbtiles
+```
 
-# 停止服务：
+系统将自动：
+
+1. 加载 Docker 镜像
+2. 应用 Martin 配置
+3. 应用前端样式配置
+4. 启动 Martin 服务
+5. 启动 Nginx 服务
+
+---
+
+## 8.3 停止服务
+
+```bash
 make stop
 ```
 
-## 3.6 发布结果验证
+---
+
+# 9. 服务验证
+
+## 9.1 Martin 服务验证
+
+访问：
+
+```text
+http://localhost:3000/catalog
+```
+
+检查：
+
+- 服务正常响应
+- MBTiles 已加载
+- 数据集名称正确
+
+---
+
+## 9.2 地图服务验证
 
 访问：
 
@@ -313,14 +503,12 @@ make stop
 http://localhost:8088
 ```
 
-检查以下内容：
+验证项：
 
-| 检查项 | 验证要求 |
-|----------|----------|
-| 地图加载 | 地图正常显示 |
-| 瓦片请求 | HTTP 状态码返回 200 |
-| 字体资源 | 字体文件正常加载 |
-| Sprite 资源 | 图标资源正常加载 |
-| 浏览器控制台 | 无跨域或资源加载错误 |
-
-当以上检查项全部通过后，即可确认地图服务发布成功。
+| 项目 | 验证要求 |
+|--------|--------|
+| 地图加载 | 正常显示 |
+| 瓦片请求 | HTTP 200 |
+| Glyphs | 正常加载 |
+| Sprite | 正常加载 |
+| 浏览器控制台 | 无错误日志 |
