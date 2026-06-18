@@ -170,7 +170,7 @@ $(MAKE) -C $(OPENMAPTILES_DIR) clean; \
 $(MAKE) -C $(OPENMAPTILES_DIR); \
 $(MAKE) -C $(OPENMAPTILES_DIR) start-db; \
 \
-$(1) \
+$(1); \
 \
 $(MAKE) -C $(OPENMAPTILES_DIR) import-sql area=$(area); \
 $(MAKE) -C $(OPENMAPTILES_DIR) generate-bbox-file area=$(area); \
@@ -199,13 +199,10 @@ ifdef zoom_level
 	@$(MAKE) set-max-zoom zoom_level=$(zoom_level)
 endif
 
-	@bash -c '$$(cat <<EOF
-$(call GENERATE_MBTILES_WORKFLOW,\
-$(MAKE) -C $(OPENMAPTILES_DIR) download area=$(area); \
-$(MAKE) -C $(OPENMAPTILES_DIR) import-data area=$(area); \
-$(MAKE) -C $(OPENMAPTILES_DIR) import-wikidata area=$(area);)
-EOF
-)'
+	@$(call GENERATE_MBTILES_WORKFLOW,\
+	$(MAKE) -C $(OPENMAPTILES_DIR) download area=$(area); \
+	$(MAKE) -C $(OPENMAPTILES_DIR) import-data area=$(area); \
+	$(MAKE) -C $(OPENMAPTILES_DIR) import-wikidata area=$(area);)
 
 ###############################################################################
 # Existing PBF -> MBTiles
@@ -222,13 +219,10 @@ ifdef zoom_level
 	@$(MAKE) set-max-zoom zoom_level=$(zoom_level)
 endif
 
-	@bash -c '$$(cat <<EOF
-$(call GENERATE_MBTILES_WORKFLOW,\
-$(MAKE) -C $(OPENMAPTILES_DIR) import-osm area=$(area); \
-$(if $(filter true,$(download)),\
-$(MAKE) -C $(OPENMAPTILES_DIR) import-wikidata area=$(area);,))
-EOF
-)'
+	@$(call GENERATE_MBTILES_WORKFLOW,\
+	$(MAKE) -C $(OPENMAPTILES_DIR) import-osm area=$(area); \
+	$(if $(filter true,$(download)),\
+	$(MAKE) -C $(OPENMAPTILES_DIR) import-wikidata area=$(area);,))
 
 ###############################################################################
 # Publish Services
