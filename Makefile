@@ -169,8 +169,9 @@ trap '$(MAKE) -C $(OPENMAPTILES_DIR) stop-db >/dev/null 2>&1 || true' EXIT; \
 $(MAKE) -C $(OPENMAPTILES_DIR) clean; \
 $(MAKE) -C $(OPENMAPTILES_DIR); \
 $(MAKE) -C $(OPENMAPTILES_DIR) start-db; \
+$(MAKE) -C $(OPENMAPTILES_DIR) import-data;
 \
-$(1); \
+$(1) \
 \
 $(MAKE) -C $(OPENMAPTILES_DIR) import-sql area=$(area); \
 $(MAKE) -C $(OPENMAPTILES_DIR) generate-bbox-file area=$(area); \
@@ -201,7 +202,7 @@ endif
 
 	@$(call GENERATE_MBTILES_WORKFLOW,\
 	$(MAKE) -C $(OPENMAPTILES_DIR) download area=$(area); \
-	$(MAKE) -C $(OPENMAPTILES_DIR) import-data area=$(area); \
+	$(MAKE) -C $(OPENMAPTILES_DIR) import-osm area=$(area); \
 	$(MAKE) -C $(OPENMAPTILES_DIR) import-wikidata area=$(area);)
 
 ###############################################################################
