@@ -2,4 +2,4 @@ listen_addresses: "0.0.0.0:3000"
 
 mbtiles:
   paths:
-    - /data/area.mbtiles
+    - /data/tiles.mbtiles

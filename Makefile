@@ -1,8 +1,10 @@
-###############################################################################
-# OpenMapTiles + Martin Build Automation
-###############################################################################
+################################################################################
+# Makefile
+################################################################################
 
 SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+
 .DEFAULT_GOAL := help
 
 ###############################################################################
@@ -17,127 +19,157 @@ else
 SED_INPLACE := sed -i
 endif
 
-###############################################################################
+################################################################################
 # Variables
-###############################################################################
+################################################################################
 
-OPENMAPTILES_DIR := ./host/openmaptiles
+area ?= tiles
+
+CLIENT_DIR := client
+HOST_DIR := host
+
+IMAGE_CACHE := $(CLIENT_DIR)/docker_image
+
+MARTIN_DIR := $(CLIENT_DIR)/martin
+
+OPENMAPTILES_DIR := $(HOST_DIR)/openmaptiles
+
+COMPOSE_FILE := $(CLIENT_DIR)/docker-compose.yml
 
 MARTIN_IMAGE := ghcr.io/maplibre/martin:latest
-NGINX_IMAGE  := nginx:alpine
+NGINX_IMAGE := nginx:alpine
 
-MARTIN_TAR := ./client/docker_image/martin.tar
-NGINX_TAR  := ./client/docker_image/nginx.tar
+MARTIN_TAR := $(IMAGE_CACHE)/martin.tar
+NGINX_TAR := $(IMAGE_CACHE)/nginx.tar
 
-MBTILES_OUTPUT := ./client/martin/area.mbtiles
+################################################################################
 
-###############################################################################
-# Help Message
-###############################################################################
+.PHONY: \
+help init \
+publish-mbtiles online-publish offline-publish \
+check-env check-init check-images check-cache check-openmaptiles \
+check-tools check-docker check-git check-make \
+clean stop restart
 
-define HELP_MESSAGE
-===============================================================================
-OpenMapTiles + Martin Build Automation
+################################################################################
+# Help
+################################################################################
 
-Usage:
-  make <target> [arguments]
-
-Targets:
-
-  help
-      Display this help message.
-
-  all
-      Initialize OpenMapTiles workspace, download required Docker images,
-      and prepare font assets for Martin.
-
-  set-max-zoom zoom_level=<ZOOM_LEVEL>
-      Configure the maximum tile zoom level for OpenMapTiles and Martin.
-
-  download-data area=<AREA> [zoom_level=<ZOOM_LEVEL>]
-      Download OSM data, import required datasets, and generate MBTiles.
-
-  pbf-to-mbtiles area=<AREA> [zoom_level=<ZOOM_LEVEL>] [download=true]
-      Generate MBTiles from an existing PBF file.
-      If download=true, Wikidata will also be downloaded and imported.
-
-  publish-mbtiles
-      Start Martin and Nginx services and publish generated MBTiles.
-
-  stop
-      Stop all running services.
-
-Examples:
-
-  make all
-
-  make download-data area=china
-
-  make download-data area=china zoom_level=12
-
-  make pbf-to-mbtiles area=china
-
-  make pbf-to-mbtiles area=china download=true
-
-===============================================================================
-endef
-
-export HELP_MESSAGE
-
-###############################################################################
-# Utility Targets
-###############################################################################
-
-.PHONY: help
 help:
-	@echo "$$HELP_MESSAGE"
+	@echo ""
+	@echo "Available targets:"
+	@echo ""
+	@echo "  make init"
+	@echo "      Initialize environment."
+	@echo ""
+	@echo "  make set-max-zoom zoom_level=<ZOOM_LEVEL>"
+	@echo "      Set max zoom level for OpenMapTiles."
+	@echo ""
+	@echo "  make publish-mbtiles area=<AREA>"
+	@echo "      Publish existing mbtiles."
+	@echo ""
+	@echo "  make online-publish area=<AREA>"
+	@echo "      Generate mbtiles online."
+	@echo ""
+	@echo "  make offline-publish area=<AREA>"
+	@echo "      Generate mbtiles from local osm.pbf."
+	@echo ""
+	@echo "  make stop"
+	@echo "      Stop martin/nginx."
+	@echo ""
+	@echo "  make restart"
+	@echo "      Restart martin/nginx."
+	@echo ""
+	@echo "  make clean"
+	@echo "      Remove generated mbtiles."
+	@echo ""
 
-.PHONY: check-openmaptiles
+################################################################################
+# Basic Checks
+################################################################################
+
+check-docker:
+	@command -v docker >/dev/null || \
+		{ echo "ERROR: docker not installed."; exit 1; }
+
+check-git:
+	@command -v git >/dev/null || \
+		{ echo "ERROR: git not installed."; exit 1; }
+
+check-make:
+	@command -v make >/dev/null || \
+		{ echo "ERROR: make not installed."; exit 1; }
+
+check-tools: check-docker check-git check-make
+
+################################################################################
+
 check-openmaptiles:
-	@test -d "$(OPENMAPTILES_DIR)" || \
-	( echo "ERROR: OpenMapTiles workspace not initialized. Run 'make all' first."; exit 1 )
+	@if [ ! -d "$(OPENMAPTILES_DIR)" ]; then \
+		echo "ERROR: openmaptiles not initialized."; \
+		exit 1; \
+	fi
 
-.PHONY: prepare-images
-prepare-images:
-	@mkdir -p ./client/docker_image
+################################################################################
 
-	@echo "Pulling Martin image..."
-	@docker pull $(MARTIN_IMAGE)
+check-init: check-tools check-openmaptiles
 
-	@echo "Pulling Nginx image..."
-	@docker pull $(NGINX_IMAGE)
+################################################################################
 
-	@echo "Saving images..."
+check-images:
+
+	@if ! docker image inspect "$(MARTIN_IMAGE)" >/dev/null 2>&1; then \
+		if [ -f "$(MARTIN_TAR)" ]; then \
+			echo "Loading Martin image..."; \
+			docker load -i "$(MARTIN_TAR)"; \
+		else \
+			echo "ERROR: Martin image missing."; \
+			exit 1; \
+		fi; \
+	fi
+
+	@if ! docker image inspect "$(NGINX_IMAGE)" >/dev/null 2>&1; then \
+		if [ -f "$(NGINX_TAR)" ]; then \
+			echo "Loading nginx image..."; \
+			docker load -i "$(NGINX_TAR)"; \
+		else \
+			echo "ERROR: nginx image missing."; \
+			exit 1; \
+		fi; \
+	fi
+
+################################################################################
+# Init
+################################################################################
+
+init: check-tools
+
+	@mkdir -p $(IMAGE_CACHE)
+
+	@echo "Checking Martin image..."
+	@if ! docker image inspect "$(MARTIN_IMAGE)" >/dev/null 2>&1; then \
+		docker pull $(MARTIN_IMAGE); \
+	fi
+
+	@echo "Checking nginx image..."
+	@if ! docker image inspect "$(NGINX_IMAGE)" >/dev/null 2>&1; then \
+		docker pull $(NGINX_IMAGE); \
+	fi
+
+	@echo "Saving docker images..."
 	@docker save $(MARTIN_IMAGE) -o $(MARTIN_TAR)
 	@docker save $(NGINX_IMAGE) -o $(NGINX_TAR)
 
-.PHONY: prepare-openmaptiles
-prepare-openmaptiles:
-	@mkdir -p host
-
-	@if [ -d "$(OPENMAPTILES_DIR)/.git" ]; then \
-		echo "Updating OpenMapTiles repository..."; \
-		git -C $(OPENMAPTILES_DIR) pull; \
-	else \
-		echo "Cloning OpenMapTiles repository..."; \
+	@if [ ! -d "$(OPENMAPTILES_DIR)" ]; then \
+		echo "Cloning OpenMapTiles..."; \
 		git clone https://github.com/openmaptiles/openmaptiles.git $(OPENMAPTILES_DIR); \
+	else \
+		echo "Updating OpenMapTiles..."; \
+		cd $(OPENMAPTILES_DIR) && git pull; \
 	fi
 
-	@$(MAKE) -C $(OPENMAPTILES_DIR) download-fonts
-
-	@rm -rf ./client/frontend/glyphs
-	@mkdir -p ./client/frontend/glyphs
-
-	@cp -R \
-		$(OPENMAPTILES_DIR)/data/fonts/* \
-		./client/frontend/glyphs/
-
-###############################################################################
-# Main Initialization
-###############################################################################
-
-.PHONY: all
-all: prepare-images prepare-openmaptiles
+	@echo ""
+	@echo "Initialization completed."
 
 ###############################################################################
 # Zoom Configuration
@@ -158,113 +190,118 @@ endif
 		"s/maxzoom: .*/maxzoom: $(zoom_level)/" \
 		$(OPENMAPTILES_DIR)/openmaptiles.yaml
 
-###############################################################################
-# Shared Tile Generation Workflow
-###############################################################################
+################################################################################
+# Publish Existing MBTiles
+################################################################################
 
-define GENERATE_MBTILES_WORKFLOW
-set -e; \
-trap '$(MAKE) -C $(OPENMAPTILES_DIR) stop-db >/dev/null 2>&1 || true' EXIT; \
-\
-$(MAKE) -C $(OPENMAPTILES_DIR) clean; \
-$(MAKE) -C $(OPENMAPTILES_DIR); \
-$(MAKE) -C $(OPENMAPTILES_DIR) start-db; \
-$(MAKE) -C $(OPENMAPTILES_DIR) import-data;
-\
-$(1) \
-\
-$(MAKE) -C $(OPENMAPTILES_DIR) import-sql area=$(area); \
-$(MAKE) -C $(OPENMAPTILES_DIR) generate-bbox-file area=$(area); \
-$(MAKE) -C $(OPENMAPTILES_DIR) generate-tiles-pg area=$(area); \
-\
-cp -f \
-	$(OPENMAPTILES_DIR)/data/tiles.mbtiles \
-	$(MBTILES_OUTPUT); \
-\
-echo "MBTiles generated successfully:"; \
-echo "  $(MBTILES_OUTPUT)"
-endef
+publish-mbtiles: check-init check-images
 
-###############################################################################
-# Download and Build
-###############################################################################
-
-.PHONY: download-data
-download-data: check-openmaptiles
-
-ifndef area
-	$(error area is required. Usage: make download-data area=<AREA>)
-endif
-
-ifdef zoom_level
-	@$(MAKE) set-max-zoom zoom_level=$(zoom_level)
-endif
-
-	@$(call GENERATE_MBTILES_WORKFLOW,\
-	$(MAKE) -C $(OPENMAPTILES_DIR) download area=$(area); \
-	$(MAKE) -C $(OPENMAPTILES_DIR) import-osm area=$(area); \
-	$(MAKE) -C $(OPENMAPTILES_DIR) import-wikidata area=$(area);)
-
-###############################################################################
-# Existing PBF -> MBTiles
-###############################################################################
-
-.PHONY: pbf-to-mbtiles
-pbf-to-mbtiles: check-openmaptiles
-
-ifndef area
-	$(error area is required. Usage: make pbf-to-mbtiles area=<AREA>)
-endif
-
-ifdef zoom_level
-	@$(MAKE) set-max-zoom zoom_level=$(zoom_level)
-endif
-
-	@$(call GENERATE_MBTILES_WORKFLOW,\
-	$(MAKE) -C $(OPENMAPTILES_DIR) import-osm area=$(area); \
-	$(if $(filter true,$(download)),\
-	$(MAKE) -C $(OPENMAPTILES_DIR) import-wikidata area=$(area);,))
-
-###############################################################################
-# Publish Services
-###############################################################################
-
-.PHONY: publish-mbtiles
-publish-mbtiles:
-
-	@test -f $(MBTILES_OUTPUT) || \
-	( echo "ERROR: MBTiles file not found. Generate it first."; exit 1 )
-
-	@cd ./client && docker compose down
-
-	@if ! docker image inspect $(MARTIN_IMAGE) >/dev/null 2>&1; then \
-		docker load -i $(MARTIN_TAR); \
+	@if [ ! -f "$(MARTIN_DIR)/$(area).mbtiles" ]; then \
+		echo "ERROR: $(area).mbtiles not found."; \
+		exit 1; \
 	fi
-
-	@if ! docker image inspect $(NGINX_IMAGE) >/dev/null 2>&1; then \
-		docker load -i $(NGINX_TAR); \
-	fi
-
-	@test -f ./client/frontend/styles/style-martin_mbtiles.json
-	@test -f ./client/martin/config_mbtiles.yaml
 
 	@cp \
-		./client/frontend/styles/style-martin_mbtiles.json \
-		./client/frontend/styles/style-martin.json
+		./client/frontend/styles/style_mbtiles.json \
+		./client/frontend/styles/style.json
 
 	@cp \
 		./client/martin/config_mbtiles.yaml \
 		./client/martin/config.yaml
 
-	@cd ./client && docker compose up -d
+	@if docker compose -f $(COMPOSE_FILE) ps martin | grep Up >/dev/null 2>&1; then \
+		echo "Restart Martin..."; \
+		AREA=$(area) docker compose -f $(COMPOSE_FILE) restart martin; \
+	else \
+		echo "Starting services..."; \
+		AREA=$(area) docker compose -f $(COMPOSE_FILE) up -d; \
+	fi
 
-	@echo "Martin service started."
+	@echo ""
+	@echo "Published $(area).mbtiles"
 
-###############################################################################
-# Stop Services
-###############################################################################
+################################################################################
+# Online Publish
+################################################################################
 
-.PHONY: stop
+online-publish: check-init
+
+	@cd $(OPENMAPTILES_DIR) && \
+	make clean && \
+	make && \
+	make start-db && \
+	make import-data && \
+	make download area=$(area) && \
+	make import-osm area=$(area) && \
+	make import-wikidata area=$(area) && \
+	make import-sql && \
+	make generate-bbox-file area=$(area) && \
+	make generate-tiles-pg area=$(area)
+
+	@cp $(OPENMAPTILES_DIR)/data/tiles.mbtiles \
+		$(MARTIN_DIR)/$(area).mbtiles
+
+	@$(MAKE) publish-mbtiles area=$(area)
+
+################################################################################
+# Offline Publish
+################################################################################
+
+offline-publish: check-init
+
+	@if [ ! -f "$(OPENMAPTILES_DIR)/data/$(area).osm.pbf" ]; then \
+		echo "ERROR: $(area).osm.pbf not found."; \
+		exit 1; \
+	fi
+
+	@cd $(OPENMAPTILES_DIR) && \
+	make clean && \
+	make && \
+	make start-db && \
+	make import-data && \
+	make import-osm area=$(area) && \
+
+	@cd $(OPENMAPTILES_DIR) && \
+	if ! make import-wikidata area=$(AREA); then \
+		echo ""; \
+		echo "ERROR: Wikidata cache is not available."; \
+		echo "The required Wikidata resources have not been cached locally."; \
+		echo "Please connect to the Internet and run 'make import-wikidata area=$(AREA)' once before using offline publishing."; \
+		exit 1; \
+	fi
+
+	@cd $(OPENMAPTILES_DIR) && \
+	make import-sql && \
+	make generate-bbox-file area=$(area) && \
+	make generate-tiles-pg area=$(area)
+
+	@cp $(OPENMAPTILES_DIR)/data/tiles.mbtiles \
+		$(MARTIN_DIR)/$(area).mbtiles
+
+	@$(MAKE) publish-mbtiles area=$(area)
+
+################################################################################
+# Stop
+################################################################################
+
 stop:
-	@cd ./client && docker compose down
-	@echo "Services stopped."
+	@docker compose -f $(COMPOSE_FILE) down
+
+################################################################################
+# Restart
+################################################################################
+
+restart:
+	@docker compose -f $(COMPOSE_FILE) restart
+
+################################################################################
+# Clean
+################################################################################
+
+clean:
+
+	@find $(MARTIN_DIR) -name "*.mbtiles" -delete
+
+	@echo "Clean completed."
+
+################################################################################

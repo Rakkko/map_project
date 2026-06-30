@@ -20,7 +20,7 @@ services:
     #   - postgis
     volumes:
       - ./martin/config.yaml:/config.yaml
-      - ./martin/area.mbtiles:/data/area.mbtiles
+      - ./martin/${AREA:-tiles}.mbtiles:/data/tiles.mbtiles
     command: ["--config", "/config.yaml"]
     ports:
       - "3000:3000"
