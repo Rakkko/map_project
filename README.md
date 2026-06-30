@@ -2,7 +2,9 @@
 
 ## 文档说明
 
-本文档描述基于 OpenStreetMap（OSM）、OpenMapTiles、Martin 和 MapLibre 的离线地图数据构建、MBTiles 生成与发布流程。
+本文档描述基于 OpenStreetMap（OSM）、OpenMapTiles、Martin、Nginx 和 MapLibre GL JS 的离线地图数据构建、MBTiles 生成与发布流程。
+
+项目采用统一的 Makefile 管理环境初始化、地图数据构建、MBTiles 发布及服务管理，可实现从数据下载到地图服务启动的一键化流程。
 
 适用于以下场景：
 
@@ -16,7 +18,7 @@
 
 # 1. 系统架构
 
-本项目采用 OpenMapTiles 数据处理链路生成矢量瓦片，并通过 Martin 提供瓦片服务，最终由 MapLibre 完成地图渲染。
+本项目采用 OpenMapTiles 数据处理链路生成矢量瓦片，并通过 Martin 提供瓦片服务，最终由 MapLibre GL JS 完成地图渲染。
 
 架构如下：
 
@@ -36,7 +38,7 @@ OpenStreetMap (PBF)
      Nginx
         │
         ▼
-   MapLibre GL
+ MapLibre GL JS
 ```
 
 组件说明：
@@ -52,10 +54,9 @@ OpenStreetMap (PBF)
 
 ---
 
-
 # 2. 项目结构
 
-初始化后目录结构如下：
+初始化完成后目录结构如下：
 
 ```text
 .
@@ -64,6 +65,8 @@ OpenStreetMap (PBF)
 │   ├── docker_image
 │   ├── frontend
 │   ├── martin
+│   │   ├── *.mbtiles
+│   │   └── config.yaml
 │   └── nginx
 │
 ├── host
@@ -77,37 +80,44 @@ OpenStreetMap (PBF)
 | 目录 | 说明 |
 |--------|--------|
 | client | 地图服务发布环境 |
-| host | OpenMapTiles 数据处理环境 |
-| client/martin | MBTiles 与 Martin 配置 |
-| client/frontend | MapLibre 前端资源 |
+| client/docker_image | Docker 镜像缓存目录 |
+| client/frontend | MapLibre GL JS 前端资源 |
+| client/martin | Martin 配置及 MBTiles 数据 |
+| client/nginx | Nginx 配置 |
+| host | 数据处理环境 |
 | host/openmaptiles | OpenMapTiles 工作目录 |
+| Makefile | 工程统一入口 |
 
 ---
 
-# 3. 环境初始化（联网环境）
+# 3. 环境初始化
 
-首次使用时需要联网下载：
-
-- Docker 镜像
-- OpenMapTiles 源码
-- 字体资源（Glyphs）
-
-执行：
+首次部署或重新初始化工程时执行：
 
 ```bash
-make all
+make init
 ```
 
-执行内容：
+初始化流程如下：
 
-1. 下载 Martin 镜像
-2. 下载 Nginx 镜像
-3. 保存镜像到本地归档文件
-4. 克隆 OpenMapTiles 仓库
-5. 下载字体资源
-6. 同步字体到前端目录
+1. 检查 Docker、Git、GNU Make 是否安装。
+2. 检查本地是否存在 Martin 与 Nginx Docker 镜像。
+3. 缺失镜像时自动执行 `docker pull`。
+4. 将镜像保存至：
 
-执行完成后即可进行地图数据处理。
+```text
+client/docker_image/
+├── martin.tar
+└── nginx.tar
+```
+
+5. 检查 `host/openmaptiles` 是否存在。
+6. 不存在时自动克隆 OpenMapTiles 仓库。
+7. 已存在时自动执行 `git pull` 更新。
+8. 检查 OpenMapTiles 依赖环境。
+9. 任一步骤失败立即退出并输出错误信息。
+
+初始化完成后即可进行地图数据构建或地图服务发布。
 
 ---
 
@@ -141,7 +151,7 @@ make set-max-zoom zoom_level=<ZOOM_LEVEL>
 示例：
 
 ```bash
-make set-max-zoom zoom_level=20
+make set-max-zoom zoom_level=16
 ```
 
 该命令会同步修改：
@@ -160,46 +170,26 @@ host/openmaptiles/openmaptiles.yaml
 
 ---
 
-## 4.3 构建时指定 Zoom Level
+# 5. 在线构建并发布地图
 
-也可以在数据构建过程中直接指定：
+适用于联网环境，根据 OpenMapTiles 支持的区域名称自动下载 OSM 数据并完成地图发布。
+
+## 5.1 执行命令
 
 ```bash
-make download-data area=asia/china zoom_level=20
+make online-publish area=<AREA>
 ```
 
-或：
+例如：
 
 ```bash
-make pbf-to-mbtiles area=china zoom_level=20
+make online-publish area=china
 ```
 
-Makefile 将自动更新配置后再执行数据生成流程。
-
----
-
-# 5. 在线下载并构建地图数据
-
-适用于首次构建指定区域地图。
-
----
-
-## 5.1 下载并生成 MBTiles
-
-执行：
+或
 
 ```bash
-make download-data area=<AREA>
-```
-
-示例：
-
-```bash
-make download-data area=china
-```
-
-```bash
-make download-data area=asia/china/sichuan
+make online-publish area=asia/china/sichuan
 ```
 
 ---
@@ -208,62 +198,95 @@ make download-data area=asia/china/sichuan
 
 | 参数 | 说明 |
 |--------|--------|
-| area | OpenMapTiles 支持的区域路径 |
-| zoom_level | 可选，最大缩放级别 |
-
-示例：
-
-```bash
-make download-data \
-    area=asia/china \
-    zoom_level=12
-```
+| area | OpenMapTiles 支持的区域名称 |
 
 ---
 
 ## 5.3 执行流程
 
-系统将自动执行：
+系统依次执行：
 
 ```text
-下载区域 PBF
-      ↓
-导入 OSM 数据
-      ↓
+环境检查
+      │
+      ▼
+OpenMapTiles 初始化
+      │
+      ▼
+下载 OSM 数据
+      │
+      ▼
+导入 OSM
+      │
+      ▼
 导入 Wikidata
-      ↓
+      │
+      ▼
 生成 SQL 数据
-      ↓
+      │
+      ▼
 生成 Bounding Box
-      ↓
-生成矢量瓦片
-      ↓
-输出 MBTiles
+      │
+      ▼
+生成 MBTiles
+      │
+      ▼
+复制到 client/martin
+      │
+      ▼
+发布 Martin 服务
 ```
 
----
-
-## 5.4 输出结果
-
-生成文件：
+对应 OpenMapTiles 命令如下：
 
 ```text
-client/martin/area.mbtiles
+make clean
+make
+make start-db
+make import-data
+make download area=$(area)
+make import-osm area=$(area)
+make import-wikidata area=$(area)
+make import-sql
+make generate-bbox-file area=$(area)
+make generate-tiles-pg
 ```
 
-该文件可直接用于 Martin 发布。
+生成完成后：
+
+```text
+host/openmaptiles/data/tiles.mbtiles
+```
+
+将自动复制为：
+
+```text
+client/martin/<AREA>.mbtiles
+```
+
+随后自动调用：
+
+```bash
+make publish-mbtiles area=<AREA>
+```
+
+完成地图发布。
 
 ---
 
-# 6. 使用已有 PBF 文件生成 MBTiles
+# 6. 使用已有 PBF 文件离线构建
 
-当已经拥有 OSM PBF 文件时，可跳过下载流程。
+适用于已拥有 OSM PBF 数据文件的场景。
 
 ---
 
 ## 6.1 准备数据
 
-将 PBF 文件放置到 OpenMapTiles 数据目录。
+将数据放置到：
+
+```text
+host/openmaptiles/data/<AREA>.osm.pbf
+```
 
 例如：
 
@@ -273,56 +296,57 @@ host/openmaptiles/data/china.osm.pbf
 
 ---
 
-## 6.2 执行构建
+## 6.2 执行命令
 
 ```bash
-make pbf-to-mbtiles area=<AREA>
+make offline-publish area=<AREA>
 ```
 
-示例：
+例如：
 
 ```bash
-make pbf-to-mbtiles area=china
-```
-
----
-
-## 6.3 Wikidata 下载控制
-
-如果需要重新下载 Wikidata：
-
-```bash
-make pbf-to-mbtiles \
-    area=china \
-    download=true
-```
-
-如果已有 Wikidata 数据：
-
-```bash
-make pbf-to-mbtiles \
-    area=china \
-    download=false
+make offline-publish area=china
 ```
 
 ---
 
-## 6.4 参数说明
+## 6.3 执行流程
 
-| 参数 | 说明 |
-|--------|--------|
-| area | PBF 数据名称（不含扩展名） |
-| download | 是否下载 Wikidata |
-| zoom_level | 最大缩放级别 |
+系统首先检查：
 
-示例：
-
-```bash
-make pbf-to-mbtiles \
-    area=china \
-    zoom_level=12 \
-    download=false
+```text
+host/openmaptiles/data/<AREA>.osm.pbf
 ```
+
+是否存在。
+
+随后依次执行：
+
+```text
+make clean
+make
+make start-db
+make import-data
+make import-osm area=$(area)
+make import-wikidata area=$(area)
+make import-sql
+make generate-bbox-file area=$(area)
+make generate-tiles-pg
+```
+
+生成完成后：
+
+```text
+host/openmaptiles/data/tiles.mbtiles
+```
+
+将自动复制至：
+
+```text
+client/martin/<AREA>.mbtiles
+```
+
+随后自动发布地图服务。
 
 ---
 
@@ -435,80 +459,114 @@ make pbf-to-mbtiles \
 
 ---
 
-# 8. 发布 MBTiles 服务（离线）
+# 8. 发布已有 MBTiles
 
-生成 MBTiles 后即可在离线环境部署。
+若已存在 MBTiles 文件，可直接发布，无需重新构建。
 
 ---
 
-## 8.1 发布目录
+## 8.1 数据准备
 
-MBTiles 文件位置：
+将 MBTiles 放置到：
 
 ```text
-client/martin/area.mbtiles
+client/martin/<AREA>.mbtiles
 ```
 
 ---
 
-## 8.2 启动服务
-
-执行：
+## 8.2 执行命令
 
 ```bash
-make publish-mbtiles
+make publish-mbtiles area=<AREA>
+```
+
+例如：
+
+```bash
+make publish-mbtiles area=china
 ```
 
 系统将自动：
 
-1. 加载 Docker 镜像
-2. 应用 Martin 配置
-3. 应用前端样式配置
-4. 启动 Martin 服务
-5. 启动 Nginx 服务
+1. 检查环境是否已初始化。
+2. 检查 MBTiles 是否存在。
+3. 检查 Docker 镜像。
+4. 若本地镜像不存在，则从：
+
+```text
+client/docker_image/
+```
+
+自动加载镜像。
+5. 检查 Martin 与 Nginx 服务是否已运行。
+
+Docker Compose 将自动挂载：
+
+```text
+client/martin/
+```
+
+目录下全部 MBTiles 文件。
 
 ---
 
-## 8.3 停止服务
+# 9. 服务管理
+
+## 9.1 停止服务
 
 ```bash
 make stop
 ```
 
+停止 Martin 与 Nginx 服务。
+
 ---
 
-# 9. 服务验证
+## 9.2 清理生成数据
 
-## 9.1 Martin 服务验证
+```bash
+make clean
+```
+
+用于清理工程生成的 MBTiles 等临时数据，不影响 Docker 镜像缓存及 OpenMapTiles 源码。
+
+---
+
+# 10. 服务验证
+
+## 10.1 Martin 服务验证
 
 访问：
 
 ```text
-http://localhost:3000/catalog
+http://<服务器地址>:3000/catalog
 ```
 
 检查：
 
-- 服务正常响应
-- MBTiles 已加载
+- Martin 服务正常启动
+- MBTiles 已正确加载
 - 数据集名称正确
 
 ---
 
-## 9.2 地图服务验证
+## 10.2 地图服务验证
 
 访问：
 
 ```text
-http://localhost:8088
+http://<服务器地址>:8088
 ```
 
-验证项：
+验证以下内容：
 
 | 项目 | 验证要求 |
 |--------|--------|
 | 地图加载 | 正常显示 |
-| 瓦片请求 | HTTP 200 |
-| Glyphs | 正常加载 |
+| 矢量瓦片 | HTTP 200 |
 | Sprite | 正常加载 |
+| Glyphs | 正常加载 |
 | 浏览器控制台 | 无错误日志 |
+
+若地图能够正常显示且 Martin Catalog 中存在对应数据集，则说明地图服务部署成功。
